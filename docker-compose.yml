@@ -1,0 +1,10 @@
+services:
+  local-radio:
+    build: .
+    container_name: local-radio
+    env_file:
+      - .env
+    volumes:
+      # Persist data on the NAS (adjust host path for Synology)
+      - ./data:/data
+    restart: unless-stopped
