@@ -18,6 +18,7 @@
           <code>{{ station.slug }}</code> · mount <code>{{ station.mount }}</code>
           · {{ shows|length }} shows
           {% if station.playlist_limit %} · plays last {{ station.playlist_limit }}{% endif %}
+          · clip {% if station.play_duration_seconds %}{{ station.play_duration_seconds }}s{% else %}full{% endif %}
           {% if is_active %} · <strong>on air</strong>{% endif %}
         </p>
       </div>
@@ -97,6 +98,10 @@
         <label>
           Playlist limit (last N)
           <input name="playlist_limit" type="number" min="1" value="{{ station.playlist_limit or '' }}" placeholder="blank = all" />
+        </label>
+        <label>
+          Clip length (seconds)
+          <input name="play_duration_seconds" value="{{ station.play_duration_seconds or '' }}" placeholder="blank or full = entire show" />
         </label>
         <label>Notes <input name="notes" value="{{ station.notes or '' }}" /></label>
         <label class="check">

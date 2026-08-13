@@ -22,7 +22,7 @@ On the NAS, set `ICECAST_PUBLIC_URL=http://192.168.1.119:18080` in `.env`.
 
 Logging uses `LOG_LEVEL` (`DEBUG` / `INFO` / `WARNING` / `ERROR`) and rotates so on-disk logs stay near `LOG_MAX_BYTES` (default 2 MB).
 
-Playlists live in SQLite (`DATABASE_PATH`, default `/data/radio.db`) with multiple stations. The seeded **test** station includes sample YouTube URLs; each station can limit playback to the newest N shows.
+Playlists live in SQLite (`DATABASE_PATH`, default `/data/radio.db`) with multiple stations. Each station can set its own clip length (blank = full show) and limit playback to the newest N shows.
 
 ## Milestone 0 (current)
 
@@ -31,10 +31,10 @@ Playlists live in SQLite (`DATABASE_PATH`, default `/data/radio.db`) with multip
 - Persistent FFmpeg encoder into Icecast (avoids dropping listeners between shows)
 - yt-dlp → decode → encoder FIFO → Icecast
 - Metadata updates on each show change
-- Skip forward button on the status page
+- Per-station clip length and skip/reload on the station page
 - Flask status / stations / logs UI
 
-`PLAY_DURATION_SECONDS=90` clips each show for faster testing (`0` or `full` = entire show).
+`PLAY_DURATION_SECONDS` in `.env` is only a fallback when a station leaves clip length blank.
 
 ## Layout
 

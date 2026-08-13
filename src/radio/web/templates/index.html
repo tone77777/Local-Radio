@@ -67,7 +67,9 @@
       <h2>Playback</h2>
       <p class="meta">
         Engine station <code>{{ station_slug }}</code>
-        · clip length {% if play_duration_seconds %}{{ play_duration_seconds }}s{% else %}full show{% endif %}
+        {% if active_station %}
+        · clip {% if active_station.play_duration_seconds %}{{ active_station.play_duration_seconds }}s{% else %}full show{% endif %}
+        {% endif %}
         · open a station page for Now Playing / Skip
       </p>
     </section>

@@ -10,7 +10,7 @@ from pathlib import Path
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
 from radio.config import Config
-from radio.db import Database
+from radio.db import Database, parse_play_duration
 from radio.logging_setup import clear_logs, filter_log_lines, read_recent_log
 from radio.metadata import IcecastMetadata
 from radio.player import RadioPlayer
@@ -44,6 +44,9 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
     def index():
         snap = state.snapshot()
         stations = db.list_stations()
+        active_station = (
+            db.get_station_by_slug(config.station_slug) if player is not None else None
+        )
         return render_template(
             "index.html",
             state=snap,
@@ -53,7 +56,7 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
             log_level=config.log_level,
             stations=stations,
             player_enabled=player is not None,
-            play_duration_seconds=config.play_duration_seconds,
+            active_station=active_station,
             station_slug=config.station_slug,
         )
 
@@ -131,6 +134,12 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
         notes = (request.form.get("notes") or "").strip()
         limit_raw = (request.form.get("playlist_limit") or "").strip()
         playlist_limit = int(limit_raw) if limit_raw.isdigit() else None
+        duration_raw = (request.form.get("play_duration_seconds") or "").strip()
+        try:
+            play_duration_seconds = parse_play_duration(duration_raw)
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("station_detail", station_id=station_id))
         enabled = request.form.get("enabled") == "1"
         if not name or not _SLUG_RE.match(slug):
             flash("Name and a valid slug are required.", "error")
@@ -144,6 +153,7 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
                 slug=slug,
                 mount=mount,
                 playlist_limit=playlist_limit,
+                play_duration_seconds=play_duration_seconds,
                 notes=notes,
                 enabled=enabled,
             )

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS stations (
     mount TEXT NOT NULL DEFAULT '/test',
     enabled INTEGER NOT NULL DEFAULT 1,
     playlist_limit INTEGER,
+    play_duration_seconds INTEGER,
     notes TEXT,
     created_at TEXT NOT NULL
 );
@@ -55,6 +56,17 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def parse_play_duration(raw: str) -> int | None:
+    """Return clip length in seconds, or None for a full show."""
+    value = raw.strip().lower()
+    if value in {"", "full", "none", "0"}:
+        return None
+    if value.isdigit():
+        seconds = int(value)
+        return seconds if seconds > 0 else None
+    raise ValueError(f"Invalid clip length: {raw!r} (use a number of seconds or 'full')")
+
+
 @dataclass
 class Station:
     id: int
@@ -63,6 +75,7 @@ class Station:
     mount: str
     enabled: bool
     playlist_limit: Optional[int]
+    play_duration_seconds: Optional[int]
     notes: Optional[str]
     created_at: str
     show_count: int = 0
@@ -77,6 +90,11 @@ class Station:
             mount=row["mount"],
             enabled=bool(row["enabled"]),
             playlist_limit=row["playlist_limit"],
+            play_duration_seconds=(
+                row["play_duration_seconds"]
+                if "play_duration_seconds" in keys and row["play_duration_seconds"] is not None
+                else None
+            ),
             notes=row["notes"],
             created_at=row["created_at"],
             show_count=int(row["show_count"]) if "show_count" in keys else 0,
@@ -130,7 +148,13 @@ class Database:
     def init(self) -> None:
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
         self.seed_if_empty()
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(stations)")}
+        if "play_duration_seconds" not in cols:
+            conn.execute("ALTER TABLE stations ADD COLUMN play_duration_seconds INTEGER")
 
     def seed_if_empty(self) -> None:
         with self.connect() as conn:
@@ -234,16 +258,28 @@ class Database:
         slug: str,
         mount: str = "/test",
         playlist_limit: Optional[int] = 5,
+        play_duration_seconds: Optional[int] = None,
         notes: str = "",
         enabled: bool = True,
     ) -> int:
         with self.connect() as conn:
             cur = conn.execute(
                 """
-                INSERT INTO stations (name, slug, mount, enabled, playlist_limit, notes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO stations (
+                    name, slug, mount, enabled, playlist_limit, play_duration_seconds, notes, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (name, slug, mount, 1 if enabled else 0, playlist_limit, notes or None, _utcnow()),
+                (
+                    name,
+                    slug,
+                    mount,
+                    1 if enabled else 0,
+                    playlist_limit,
+                    play_duration_seconds,
+                    notes or None,
+                    _utcnow(),
+                ),
             )
             return int(cur.lastrowid)
 
@@ -255,6 +291,7 @@ class Database:
         slug: str,
         mount: str,
         playlist_limit: Optional[int],
+        play_duration_seconds: Optional[int],
         notes: str,
         enabled: bool,
     ) -> None:
@@ -262,7 +299,8 @@ class Database:
             conn.execute(
                 """
                 UPDATE stations
-                SET name = ?, slug = ?, mount = ?, playlist_limit = ?, notes = ?, enabled = ?
+                SET name = ?, slug = ?, mount = ?, playlist_limit = ?,
+                    play_duration_seconds = ?, notes = ?, enabled = ?
                 WHERE id = ?
                 """,
                 (
@@ -270,6 +308,7 @@ class Database:
                     slug,
                     mount,
                     playlist_limit,
+                    play_duration_seconds,
                     notes or None,
                     1 if enabled else 0,
                     station_id,

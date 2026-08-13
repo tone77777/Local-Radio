@@ -34,6 +34,7 @@
             <th>Mount</th>
             <th>Shows</th>
             <th>Last N</th>
+            <th>Clip</th>
             <th>Now playing</th>
             <th>Enabled</th>
           </tr>
@@ -47,6 +48,7 @@
             <td><code>{{ s.mount }}</code></td>
             <td>{{ s.show_count }}</td>
             <td>{{ s.playlist_limit if s.playlist_limit is not none else "all" }}</td>
+            <td>{% if s.play_duration_seconds %}{{ s.play_duration_seconds }}s{% else %}full{% endif %}</td>
             <td class="meta">
               {% if active_station_slug == s.slug and pb.get('running') %}
                 {{ pb.current_show.artist }} — {{ pb.current_show.title }}

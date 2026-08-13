@@ -189,7 +189,7 @@ class RadioPlayer:
             last_error=None,
         )
 
-        started = self._feed_show(show.url)
+        started = self._feed_show(show.url, self._clip_seconds_for_show(show))
         if not started:
             return
 
@@ -205,6 +205,12 @@ class RadioPlayer:
         else:
             log.info("Show finished: %s", title)
         self.db.mark_played(show.id)
+
+    def _clip_seconds_for_show(self, show: Show) -> int | None:
+        station = self.db.get_station(show.station_id)
+        if station is not None:
+            return station.play_duration_seconds
+        return self.config.play_duration_seconds
 
     def _feeders_alive(self) -> bool:
         with self._lock:
@@ -249,11 +255,11 @@ class RadioPlayer:
                 metadata_detail="Mount/feed not ready",
             )
 
-    def _feed_show(self, url: str) -> bool:
-        ytdlp_cmd, ffmpeg_cmd = build_feed_command(url, self.config.play_duration_seconds)
+    def _feed_show(self, url: str, duration_seconds: int | None = None) -> bool:
+        ytdlp_cmd, ffmpeg_cmd = build_feed_command(url, duration_seconds)
         log.info(
             "Feeding show into persistent encoder (duration=%s)",
-            self.config.play_duration_seconds or "full",
+            duration_seconds or "full",
         )
         try:
             ytdlp = subprocess.Popen(
