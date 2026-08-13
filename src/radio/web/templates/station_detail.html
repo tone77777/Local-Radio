@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ station.name }} · Local Radio</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  {% if is_active %}
+  <meta http-equiv="refresh" content="5" />
+  {% endif %}
+</head>
+<body>
+  <main class="wide">
+    <header class="log-header">
+      <div>
+        <h1>{{ station.name }}</h1>
+        <p class="tagline">
+          <code>{{ station.slug }}</code> · mount <code>{{ station.mount }}</code>
+          · {{ shows|length }} shows
+          {% if station.playlist_limit %} · plays last {{ station.playlist_limit }}{% endif %}
+          {% if is_active %} · <strong>on air</strong>{% endif %}
+        </p>
+      </div>
+      <div class="header-actions">
+        <a class="button secondary" href="{{ url_for('stations_index') }}">← Stations</a>
+        <a class="button secondary" href="/">Status</a>
+      </div>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <p class="flash flash-{{ category }}">{{ message }}</p>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <section class="now-playing">
+      <h2>Now playing</h2>
+      {% if is_active %}
+        <p class="badge badge-{{ station_state.status }}">{{ station_state.status | upper }}</p>
+        <p class="artist">{{ station_state.current_show.artist }}</p>
+        <p class="title">{{ station_state.current_show.title }}</p>
+        <p class="meta">{{ station_state.message }}</p>
+        <p class="meta">
+          FFmpeg: {{ "yes" if station_state.ffmpeg_running else "no" }}
+          · Icecast: {{ "live" if station_state.icecast_connected else "down" }}
+          · Metadata:
+          {% if station_state.metadata_ok is none %}unknown
+          {% elif station_state.metadata_ok %}ok
+          {% else %}error{% endif %}
+        </p>
+        {% if station_state.metadata_detail %}
+        <p class="meta">{{ station_state.metadata_detail }}</p>
+        {% endif %}
+        <div class="actions" style="margin-top: 0.8rem;">
+          <a class="button" href="{{ stream_url }}" target="_blank" rel="noopener">Open stream</a>
+          <a class="button secondary" href="{{ icecast_status_url }}" target="_blank" rel="noopener">Icecast status</a>
+          {% if player_enabled %}
+          <form method="post" action="/actions/skip" class="inline-form">
+            <input type="hidden" name="station_id" value="{{ station.id }}" />
+            <button type="submit" class="button">Skip forward</button>
+          </form>
+          <form method="post" action="/actions/reload-playlist" class="inline-form">
+            <input type="hidden" name="station_id" value="{{ station.id }}" />
+            <button type="submit" class="button secondary">Reload playlist</button>
+          </form>
+          <form method="post" action="/actions/test-now-playing" class="inline-form">
+            <input type="hidden" name="station_id" value="{{ station.id }}" />
+            <button type="submit" class="button secondary">Test Now Playing</button>
+          </form>
+          {% endif %}
+        </div>
+        <p class="meta" style="margin-top: 0.6rem;">
+          Reload playlist stops the current show and starts a new cycle from the database
+          (picks up newly added / enabled / disabled shows).
+        </p>
+      {% else %}
+        <p class="meta">This station is not on air right now.</p>
+        <p class="meta">
+          Only one station plays at a time
+          {% if active_station_slug %}
+          (currently <code>{{ active_station_slug }}</code>)
+          {% endif %}.
+          Open that station’s page for live Now Playing.
+        </p>
+        <p class="meta">Stream URL for this station: <code>{{ stream_url }}</code></p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>Station settings</h2>
+      <form method="post" action="{{ url_for('station_update', station_id=station.id) }}" class="stack-form">
+        <label>Name <input name="name" value="{{ station.name }}" required /></label>
+        <label>Slug <input name="slug" value="{{ station.slug }}" required pattern="[a-z0-9]+(-[a-z0-9]+)*" /></label>
+        <label>Mount <input name="mount" value="{{ station.mount }}" required /></label>
+        <label>
+          Playlist limit (last N)
+          <input name="playlist_limit" type="number" min="1" value="{{ station.playlist_limit or '' }}" placeholder="blank = all" />
+        </label>
+        <label>Notes <input name="notes" value="{{ station.notes or '' }}" /></label>
+        <label class="check">
+          <input type="checkbox" name="enabled" value="1" {% if station.enabled %}checked{% endif %} />
+          Enabled
+        </label>
+        <button type="submit" class="button">Save station</button>
+      </form>
+      {% if station.slug != 'test' %}
+      <form method="post" action="{{ url_for('station_delete', station_id=station.id) }}" class="danger-form" onsubmit="return confirm('Delete this station and all its shows?');">
+        <button type="submit" class="button danger">Delete station</button>
+      </form>
+      {% else %}
+      <p class="meta">The test station is protected from deletion.</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>Active window (last N · newest first)</h2>
+      {% if recent %}
+      <ol class="url-list">
+        {% for sh in recent %}
+        <li>
+          <strong>{{ sh.label or "Untitled" }}</strong>
+          <div class="meta">Date added: {{ sh.created_at | date_added }}</div>
+          <div><a href="{{ sh.url }}" target="_blank" rel="noopener">{{ sh.url }}</a></div>
+        </li>
+        {% endfor %}
+      </ol>
+      {% else %}
+      <p class="meta">No enabled shows in the active window.</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>Add show</h2>
+      <form method="post" action="{{ url_for('show_create', station_id=station.id) }}" class="stack-form">
+        <label>URL <input name="url" required placeholder="https://www.youtube.com/watch?v=..." /></label>
+        <label>Label (optional) <input name="label" placeholder="Friendly name for the UI" /></label>
+        <button type="submit" class="button">Add URL</button>
+      </form>
+      <p class="meta">New shows get a Date added timestamp automatically and appear at the top.</p>
+    </section>
+
+    <section>
+      <h2>Import URL list</h2>
+      <form method="post" action="{{ url_for('shows_import', station_id=station.id) }}" class="stack-form">
+        <label>
+          One URL per line
+          <textarea name="urls" rows="8" placeholder="https://www.mixcloud.com/...&#10;https://www.youtube.com/watch?v=...&#10;# comments and blank lines are ignored"></textarea>
+        </label>
+        <button type="submit" class="button">Import URLs</button>
+      </form>
+      <p class="meta">All imported rows get today’s date added (UTC now). Duplicates on this station are skipped.</p>
+    </section>
+
+    <section>
+      <h2>All shows (newest first)</h2>
+      {% for sh in shows %}
+      <article class="show-card {% if not sh.enabled %}disabled{% endif %}">
+        <p class="date-added"><span>Date added</span> {{ sh.created_at | date_added }}</p>
+        <form method="post" action="{{ url_for('show_update', show_id=sh.id) }}" class="stack-form">
+          <label>Label <input name="label" value="{{ sh.label or '' }}" /></label>
+          <label>URL <input name="url" value="{{ sh.url }}" required /></label>
+          <label class="check">
+            <input type="checkbox" name="enabled" value="1" {% if sh.enabled %}checked{% endif %} />
+            Enabled
+          </label>
+          <p class="meta">Played {{ sh.play_count }}×{% if sh.last_played_at %} · last {{ sh.last_played_at | date_added }}{% endif %}</p>
+          <button type="submit" class="button secondary">Save</button>
+        </form>
+        <div class="row-actions">
+          <form method="post" action="{{ url_for('show_toggle', show_id=sh.id) }}" class="inline-form">
+            <button type="submit" class="button secondary">{{ "Disable" if sh.enabled else "Enable" }}</button>
+          </form>
+          <form method="post" action="{{ url_for('show_delete', show_id=sh.id) }}" class="inline-form" onsubmit="return confirm('Delete this show?');">
+            <button type="submit" class="button danger">Delete</button>
+          </form>
+        </div>
+      </article>
+      {% else %}
+      <p class="meta">No shows yet.</p>
+      {% endfor %}
+    </section>
+  </main>
+</body>
+</html>

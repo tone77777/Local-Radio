@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Local Radio · Logs</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  {% if auto_refresh %}
+  <meta http-equiv="refresh" content="5" />
+  {% endif %}
+</head>
+<body>
+  <main class="wide">
+    <header class="log-header">
+      <div>
+        <h1>Logs</h1>
+        <p class="tagline">
+          Writing at <strong>{{ log_level }}</strong>
+          · capped ~{{ (config.log_max_bytes / 1000000) | round(1) }} MB on disk
+        </p>
+      </div>
+      <a class="button secondary" href="/">← Status</a>
+    </header>
+
+    <section class="log-toolbar">
+      <form method="get" action="/logs" class="level-form">
+        <label for="level">Show</label>
+        <select id="level" name="level" onchange="this.form.submit()">
+          {% for lvl in ["DEBUG", "INFO", "WARNING", "ERROR"] %}
+          <option value="{{ lvl }}" {% if selected_level == lvl %}selected{% endif %}>{{ lvl }}+</option>
+          {% endfor %}
+        </select>
+        <input type="hidden" name="refresh" value="{{ '1' if auto_refresh else '0' }}" />
+      </form>
+      <div class="log-links">
+        {% if auto_refresh %}
+        <a href="/logs?level={{ selected_level }}&refresh=0">Pause refresh</a>
+        {% else %}
+        <a href="/logs?level={{ selected_level }}&refresh=1">Auto-refresh</a>
+        {% endif %}
+        <a href="/api/log?level={{ selected_level }}" target="_blank" rel="noopener">JSON</a>
+        <form method="post" action="/logs/clear" class="inline-form">
+          <input type="hidden" name="level" value="{{ selected_level }}" />
+          <input type="hidden" name="refresh" value="{{ '1' if auto_refresh else '0' }}" />
+          <button type="submit" class="linkish">Clear log</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="log-panel">
+      <pre id="log">{{ log_text }}</pre>
+    </section>
+  </main>
+  <script>
+    const el = document.getElementById("log");
+    if (el) el.scrollTop = el.scrollHeight;
+  </script>
+</body>
+</html>

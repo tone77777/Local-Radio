@@ -1,6 +1,9 @@
 .git
 .gitignore
 .env
-data
+logs
 README.md
+docs
 *.md
+__pycache__
+.venv

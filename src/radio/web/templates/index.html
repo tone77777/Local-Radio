@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Local Radio</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <meta http-equiv="refresh" content="8" />
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Local Radio</h1>
+      <p class="tagline">Status &amp; debug · log level {{ log_level }}</p>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <p class="flash flash-{{ category }}">{{ message }}</p>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    {% set status = state.status %}
+    <section class="status-block">
+      <p class="badge badge-{{ status }}">{{ status | upper }}</p>
+      <p class="message">{{ state.message }}</p>
+      {% if state.active_station_slug %}
+      <p class="meta">Active station: <code>{{ state.active_station_slug }}</code></p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>Stations</h2>
+      <ul class="station-list">
+        {% for s in stations %}
+        <li>
+          <a href="{{ url_for('station_detail', station_id=s.id) }}">{{ s.name }}</a>
+          <span class="meta">
+            {{ s.mount }} · {{ s.show_count }} shows
+            {% if s.playlist_limit %} · last {{ s.playlist_limit }}{% endif %}
+            {% if state.active_station_slug == s.slug %}
+              · <strong>on air</strong>
+              {% if state.current_show %}
+                — {{ state.current_show.artist }} / {{ state.current_show.title }}
+              {% endif %}
+            {% endif %}
+          </span>
+        </li>
+        {% else %}
+        <li class="meta">No stations yet</li>
+        {% endfor %}
+      </ul>
+      <p><a href="{{ url_for('stations_index') }}">Manage stations →</a></p>
+    </section>
+
+    <section class="actions">
+      <a class="button secondary" href="/stations">Stations</a>
+      <a class="button secondary" href="/logs">Logs</a>
+      <a class="button secondary" href="{{ icecast_status_url }}" target="_blank" rel="noopener">Icecast status</a>
+      <a class="button secondary" href="/api/status" target="_blank" rel="noopener">JSON API</a>
+    </section>
+
+    {% if player_enabled %}
+    <section>
+      <h2>Playback</h2>
+      <p class="meta">
+        Engine station <code>{{ station_slug }}</code>
+        · clip length {% if play_duration_seconds %}{{ play_duration_seconds }}s{% else %}full show{% endif %}
+        · open a station page for Now Playing / Skip
+      </p>
+    </section>
+    {% endif %}
+
+    {% if state.last_error %}
+    <section class="error">
+      <h2>Last error</h2>
+      <pre>{{ state.last_error }}</pre>
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>

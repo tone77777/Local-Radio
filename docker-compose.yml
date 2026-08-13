@@ -1,10 +1,26 @@
 services:
-  local-radio:
+  icecast:
+    build: ./icecast
+    container_name: local-radio-icecast
+    env_file:
+      - .env
+    ports:
+      - "${ICECAST_HOST_PORT:-18080}:8000"
+    restart: unless-stopped
+
+  radio:
     build: .
     container_name: local-radio
     env_file:
       - .env
+    environment:
+      ICECAST_HOST: icecast
+      ICECAST_PORT: "8000"
+    ports:
+      - "${WEB_HOST_PORT:-8080}:8080"
     volumes:
-      # Persist data on the NAS (adjust host path for Synology)
       - ./data:/data
+      - ./logs:/app/logs
+    depends_on:
+      - icecast
     restart: unless-stopped

@@ -1,3 +1,11 @@
 .env
-data/
 .DS_Store
+data/*
+!data/mixes.txt
+*.db
+*.db-journal
+logs/*
+!logs/.gitkeep
+__pycache__/
+*.pyc
+.venv/

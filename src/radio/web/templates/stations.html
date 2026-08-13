@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stations · Local Radio</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <main class="wide">
+    <header class="log-header">
+      <div>
+        <h1>Stations</h1>
+        <p class="tagline">SQLite-backed playlists · multi-station ready</p>
+      </div>
+      <a class="button secondary" href="/">← Status</a>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <p class="flash flash-{{ category }}">{{ message }}</p>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <section>
+      <h2>All stations</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Slug</th>
+            <th>Mount</th>
+            <th>Shows</th>
+            <th>Last N</th>
+            <th>Now playing</th>
+            <th>Enabled</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in stations %}
+          {% set pb = playback.get(s.slug, {}) %}
+          <tr>
+            <td><a href="{{ url_for('station_detail', station_id=s.id) }}">{{ s.name }}</a></td>
+            <td><code>{{ s.slug }}</code></td>
+            <td><code>{{ s.mount }}</code></td>
+            <td>{{ s.show_count }}</td>
+            <td>{{ s.playlist_limit if s.playlist_limit is not none else "all" }}</td>
+            <td class="meta">
+              {% if active_station_slug == s.slug and pb.get('running') %}
+                {{ pb.current_show.artist }} — {{ pb.current_show.title }}
+              {% elif active_station_slug == s.slug %}
+                on air
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td>{{ "yes" if s.enabled else "no" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Add station</h2>
+      <form method="post" action="{{ url_for('stations_create') }}" class="stack-form">
+        <label>Name <input name="name" required placeholder="Late Night" /></label>
+        <label>Slug <input name="slug" required pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="late-night" /></label>
+        <label>Mount <input name="mount" placeholder="/late-night" /></label>
+        <label>Playlist limit (last N) <input name="playlist_limit" type="number" min="1" value="5" /></label>
+        <label>Notes <input name="notes" placeholder="Optional" /></label>
+        <button type="submit" class="button">Create station</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

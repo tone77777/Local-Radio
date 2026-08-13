@@ -1,20 +1,44 @@
 # Local Radio
 
-Dockerized scripts for running on a Synology NAS.
+Self-hosted Mixcloud/YouTube radio via yt-dlp → FFmpeg → Icecast, with a small Flask status UI.
 
-## First build (local)
+## Quick start
 
 ```bash
-cp .env.example .env   # if you don't already have .env
-docker compose up --build
+cp .env.example .env
+docker compose up --build -d
 ```
 
-Stop with `Ctrl+C`, or run detached with `docker compose up --build -d`.
+| What | URL |
+|------|-----|
+| Status page | http://127.0.0.1:8080/ |
+| Stations (editable) | http://127.0.0.1:8080/stations |
+| Logs | http://127.0.0.1:8080/logs |
+| JSON API | http://127.0.0.1:8080/api/status |
+| Icecast stream | http://127.0.0.1:18080/test |
+| Icecast status | http://127.0.0.1:18080/status.xsl |
+
+On the NAS, set `ICECAST_PUBLIC_URL=http://192.168.1.119:18080` in `.env`.
+
+Logging uses `LOG_LEVEL` (`DEBUG` / `INFO` / `WARNING` / `ERROR`) and rotates so on-disk logs stay near `LOG_MAX_BYTES` (default 2 MB).
+
+Playlists live in SQLite (`DATABASE_PATH`, default `/data/radio.db`) with multiple stations. The seeded **test** station includes sample YouTube URLs; each station can limit playback to the newest N shows.
+
+## Milestone 0 (current)
+
+- Icecast on host port **18080**
+- Playlist playback from SQLite (`STATION_SLUG`, default `test`)
+- Persistent FFmpeg encoder into Icecast (avoids dropping listeners between shows)
+- yt-dlp → decode → encoder FIFO → Icecast
+- Metadata updates on each show change
+- Skip forward button on the status page
+- Flask status / stations / logs UI
+
+`PLAY_DURATION_SECONDS=90` clips each show for faster testing (`0` or `full` = entire show).
 
 ## Layout
 
-- `Dockerfile` — base image and package installs
-- `docker-compose.yml` — how the container runs (local + Synology)
-- `scripts/` — shell scripts executed inside the container
-- `data/` — mounted volume for persistent files
-- `.env` — local/NAS config (not committed)
+- `icecast/` — Icecast image + config template
+- `src/radio/` — Python app (player + web)
+- `data/mixes.txt` — playlist (later)
+- `logs/` — rotated app logs
