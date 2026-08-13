@@ -32,7 +32,6 @@ class RadioPlayer:
         self.playlist = Playlist(
             db,
             station_slug=config.station_slug,
-            random_start=config.random_start,
         )
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()

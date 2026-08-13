@@ -31,7 +31,6 @@ class Config:
     enable_test_stream: bool
     playback_enabled: bool
     station_slug: str
-    random_start: bool
     play_duration_seconds: int | None
     log_dir: str
     log_level: str
@@ -80,7 +79,6 @@ class Config:
             enable_test_stream=_env("ENABLE_TEST_STREAM", "0") not in {"0", "false", "False"},
             playback_enabled=_env("PLAYBACK_ENABLED", "1") not in {"0", "false", "False"},
             station_slug=_env("STATION_SLUG", "test") or "test",
-            random_start=_env("RANDOM_START", "1") not in {"0", "false", "False"},
             play_duration_seconds=play_duration,
             log_dir=_env("LOG_DIR", "/app/logs"),
             log_level=_env("LOG_LEVEL", "INFO").upper() or "INFO",

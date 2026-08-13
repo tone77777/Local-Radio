@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import logging
-import random
 from dataclasses import dataclass
-from typing import Iterator, Optional
+from typing import Iterator
 
 from radio.db import Database, Show, Station
 
@@ -17,19 +16,16 @@ class PlaylistSnapshot:
 
 
 class Playlist:
-    """Sequential rotation with optional random start each cycle."""
+    """Sequential rotation: oldest→newest within the active window, then repeat."""
 
     def __init__(
         self,
         db: Database,
         *,
         station_slug: str,
-        random_start: bool = True,
     ) -> None:
         self.db = db
         self.station_slug = station_slug
-        self.random_start = random_start
-        self._start_offset = 0
 
     def load(self) -> PlaylistSnapshot:
         station = self.db.get_station_by_slug(self.station_slug)
@@ -48,16 +44,10 @@ class Playlist:
     def iter_cycle(self) -> Iterator[Show]:
         snap = self.load()
         shows = snap.shows
-        if self.random_start:
-            self._start_offset = random.randrange(len(shows))
-        else:
-            self._start_offset = 0
-        ordered = shows[self._start_offset :] + shows[: self._start_offset]
         log.info(
-            "Playlist cycle station=%s shows=%s start_offset=%s first=%s",
+            "Playlist cycle station=%s shows=%s first=%s",
             snap.station.slug,
-            len(ordered),
-            self._start_offset,
-            ordered[0].label or ordered[0].url,
+            len(shows),
+            shows[0].label or shows[0].url,
         )
-        yield from ordered
+        yield from shows
