@@ -15,6 +15,7 @@ from radio.logging_setup import clear_logs, filter_log_lines, read_recent_log
 from radio.metadata import IcecastMetadata
 from radio.player import RadioPlayer
 from radio.state import ShowInfo, state
+from radio.web.api import register_api
 
 log = logging.getLogger("radio")
 
@@ -39,6 +40,7 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
     app.secret_key = config.icecast_admin_password or "local-radio-dev"
     app.jinja_env.filters["date_added"] = _format_added
     metadata = IcecastMetadata(config)
+    register_api(app, db)
 
     @app.get("/")
     def index():

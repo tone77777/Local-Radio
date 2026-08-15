@@ -14,7 +14,7 @@ docker compose up --build -d
 | Status page | http://127.0.0.1:8080/ |
 | Stations (editable) | http://127.0.0.1:8080/stations |
 | Logs | http://127.0.0.1:8080/logs |
-| JSON API | http://127.0.0.1:8080/api/status |
+| JSON API | http://127.0.0.1:8080/api |
 | Icecast stream | http://127.0.0.1:18080/test |
 | Icecast status | http://127.0.0.1:18080/status.xsl |
 
@@ -35,6 +35,28 @@ Playlists live in SQLite (`DATABASE_PATH`, default `/data/radio.db`) with multip
 - Flask status / stations / logs UI
 
 `PLAY_DURATION_SECONDS` in `.env` is only a fallback when a station leaves clip length blank.
+
+## API
+
+`GET /api` lists endpoints. To add a show, POST a URL; Local Radio probes it with yt-dlp (`-j --skip-download`) and rejects it if extraction fails.
+
+```bash
+curl -sS -X POST http://127.0.0.1:8080/api/stations/test/shows \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://www.youtube.com/watch?v=jNQXAC9IVRw"}'
+```
+
+`<id_or_slug>` can be a numeric station id or the slug (`test`). Optional body fields: `label`, `enabled`.
+
+| Status | Meaning |
+|--------|---------|
+| 201 | Show added (label defaults to `artist — title` from yt-dlp) |
+| 400 | Missing / non-http URL |
+| 404 | Station not found |
+| 409 | That URL is already on the station |
+| 422 | yt-dlp could not process the URL |
+
+The new show is saved immediately. Use **Reload playlist** on the station page if you want the on-air cycle to pick it up before the current loop finishes.
 
 ## Layout
 
