@@ -53,7 +53,7 @@ class RadioPlayer:
         self._stop.set()
         self._skip.set()
         self._reload.set()
-        self._kill_feeders()
+        self._kill_feeders(force=True)
         self.encoder.stop()
         if self._thread:
             self._thread.join(timeout=10)
@@ -61,31 +61,44 @@ class RadioPlayer:
     def skip(self) -> None:
         log.info("Skip requested")
         self._skip.set()
-        self._kill_feeders()
+        self._kill_feeders(force=True)
 
-    def reload_playlist(self) -> None:
-        """Stop the current show and start a fresh playlist cycle from the DB."""
-        log.info("Playlist reload requested")
+    def restart_stream(self) -> None:
+        """Cut the current feed now, keep Icecast up, reload playlist from a random show."""
+        log.info("Restart stream requested")
+        self.playlist.start_from_random()
         self._reload.set()
         self._skip.set()
-        self._kill_feeders()
+        self._kill_feeders(force=True)
 
-    def _kill_feeders(self) -> None:
+    def reload_playlist(self) -> None:
+        self.restart_stream()
+
+    def _kill_feeders(self, *, force: bool = False) -> None:
         with self._lock:
             procs = list(self._feed_procs)
             self._feed_procs.clear()
+        sig = signal.SIGKILL if force else signal.SIGTERM
         for proc in procs:
             if proc.poll() is None:
-                try:
-                    os.killpg(proc.pid, signal.SIGTERM)
-                except (ProcessLookupError, PermissionError, OSError):
-                    try:
-                        proc.terminate()
-                    except Exception:
-                        pass
+                self._signal_group(proc, sig)
         for proc in procs:
             try:
-                proc.wait(timeout=3)
+                proc.wait(timeout=0.4 if force else 1.5)
+            except Exception:
+                self._signal_group(proc, signal.SIGKILL)
+                try:
+                    proc.wait(timeout=0.5)
+                except Exception:
+                    pass
+
+    @staticmethod
+    def _signal_group(proc: subprocess.Popen, sig: int) -> None:
+        try:
+            os.killpg(proc.pid, sig)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                proc.send_signal(sig)
             except Exception:
                 try:
                     proc.kill()
@@ -144,8 +157,9 @@ class RadioPlayer:
                         break
                     self.encoder.write_silence(0.35)
                 if self._reload.is_set() and not self._stop.is_set():
-                    log.info("Restarting playlist cycle after hard reload")
-                    state.update(message="Playlist reloaded from database")
+                    log.info("Restarting stream into Icecast (encoder stays up)")
+                    state.update(status="playing", message="Restarting stream")
+                    self.encoder.write_silence(0.2)
             except Exception as exc:
                 msg = str(exc)
                 log.exception("Playlist loop error: %s", msg)
@@ -176,6 +190,10 @@ class RadioPlayer:
             time.sleep(1)
             return
 
+        if self._skip.is_set() or self._stop.is_set() or self._reload.is_set():
+            log.info("Aborting show before feed: %s", show.url)
+            return
+
         # Prefer DB label when present for title hint, but trust yt-dlp for artist/title.
         artist = resolved.artist
         title = resolved.title
@@ -191,6 +209,12 @@ class RadioPlayer:
 
         started = self._feed_show(show.url, self._clip_seconds_for_show(show))
         if not started:
+            return
+
+        if self._skip.is_set() or self._reload.is_set():
+            self._kill_feeders(force=True)
+            log.info("Show interrupted: %s", title)
+            state.update(message=f"Interrupted: {title}")
             return
 
         self._publish_metadata_when_ready(artist, title)

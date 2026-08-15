@@ -348,8 +348,8 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
         flash("Skip requested.", "ok")
         return redirect(redirect_target)
 
-    @app.post("/actions/reload-playlist")
-    def action_reload_playlist():
+    @app.post("/actions/restart-stream")
+    def action_restart_stream():
         station_id = request.form.get("station_id")
         redirect_target = (
             url_for("station_detail", station_id=int(station_id))
@@ -366,13 +366,17 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
                 return redirect(url_for("stations_index"))
             if station.slug != config.station_slug:
                 flash(
-                    f"Reload only applies to the on-air station ({config.station_slug}).",
+                    f"Restart only applies to the on-air station ({config.station_slug}).",
                     "error",
                 )
                 return redirect(redirect_target)
-        player.reload_playlist()
-        flash("Playlist reload requested — loading latest shows from the database.", "ok")
+        player.restart_stream()
+        flash("Restarting stream — Icecast stays up.", "ok")
         return redirect(redirect_target)
+
+    @app.post("/actions/reload-playlist")
+    def action_reload_playlist():
+        return action_restart_stream()
 
     @app.post("/api/player/skip")
     def api_player_skip():
@@ -381,12 +385,19 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
         player.skip()
         return jsonify({"ok": True, "detail": "skip requested"})
 
+    @app.post("/api/player/restart")
+    def api_player_restart():
+        if not player:
+            return jsonify({"ok": False, "detail": "playback engine not running"}), 400
+        player.restart_stream()
+        return jsonify({"ok": True, "detail": "stream restart requested"})
+
     @app.post("/api/player/reload")
     def api_player_reload():
         if not player:
             return jsonify({"ok": False, "detail": "playback engine not running"}), 400
-        player.reload_playlist()
-        return jsonify({"ok": True, "detail": "playlist reload requested"})
+        player.restart_stream()
+        return jsonify({"ok": True, "detail": "stream restart requested"})
 
     @app.post("/api/metadata/test")
     def api_metadata_test():

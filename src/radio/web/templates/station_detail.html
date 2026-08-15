@@ -62,9 +62,9 @@
             <input type="hidden" name="station_id" value="{{ station.id }}" />
             <button type="submit" class="button">Skip forward</button>
           </form>
-          <form method="post" action="/actions/reload-playlist" class="inline-form">
+          <form method="post" action="/actions/restart-stream" class="inline-form">
             <input type="hidden" name="station_id" value="{{ station.id }}" />
-            <button type="submit" class="button secondary">Reload playlist</button>
+            <button type="submit" class="button secondary">Restart stream</button>
           </form>
           <form method="post" action="/actions/test-now-playing" class="inline-form">
             <input type="hidden" name="station_id" value="{{ station.id }}" />
@@ -73,8 +73,8 @@
           {% endif %}
         </div>
         <p class="meta" style="margin-top: 0.6rem;">
-          Reload playlist stops the current show and starts a new cycle from the database
-          (picks up newly added / enabled / disabled shows).
+          Restart stream cuts the current show immediately, keeps Icecast up, and starts
+          again from a random show in the latest playlist.
         </p>
       {% else %}
         <p class="meta">This station is not on air right now.</p>
