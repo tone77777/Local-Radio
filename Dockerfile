@@ -1,3 +1,5 @@
+FROM denoland/deno:bin AS deno
+
 FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -14,6 +16,8 @@ RUN apt-get update \
     python3-pip \
     python3-venv \
   && rm -rf /var/lib/apt/lists/*
+
+COPY --from=deno /deno /usr/local/bin/deno
 
 WORKDIR /app
 
