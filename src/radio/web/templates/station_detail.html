@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ station.name }} · Local Radio</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
-  {% if is_active %}
-  <meta http-equiv="refresh" content="5" />
-  {% endif %}
 </head>
 <body>
   <main class="wide">
@@ -39,11 +36,11 @@
     <section class="now-playing">
       <h2>Now playing</h2>
       {% if is_active %}
-        <p class="badge badge-{{ station_state.status }}">{{ station_state.status | upper }}</p>
-        <p class="artist">{{ station_state.current_show.artist }}</p>
-        <p class="title">{{ station_state.current_show.title }}</p>
-        <p class="meta">{{ station_state.message }}</p>
-        <p class="meta">
+        <p id="np-badge" class="badge badge-{{ station_state.status }}">{{ station_state.status | upper }}</p>
+        <p id="np-artist" class="artist">{{ station_state.current_show.artist }}</p>
+        <p id="np-title" class="title">{{ station_state.current_show.title }}</p>
+        <p id="np-message" class="meta">{{ station_state.message }}</p>
+        <p id="np-health" class="meta">
           FFmpeg: {{ "yes" if station_state.ffmpeg_running else "no" }}
           · Icecast: {{ "live" if station_state.icecast_connected else "down" }}
           · Metadata:
@@ -51,9 +48,7 @@
           {% elif station_state.metadata_ok %}ok
           {% else %}error{% endif %}
         </p>
-        {% if station_state.metadata_detail %}
-        <p class="meta">{{ station_state.metadata_detail }}</p>
-        {% endif %}
+        <p id="np-metadata-detail" class="meta"{% if not station_state.metadata_detail %} hidden{% endif %}>{{ station_state.metadata_detail or "" }}</p>
         <div class="actions" style="margin-top: 0.8rem;">
           <a class="button" href="{{ stream_url }}" target="_blank" rel="noopener">Open stream</a>
           <a class="button secondary" href="{{ icecast_status_url }}" target="_blank" rel="noopener">Icecast status</a>
@@ -128,6 +123,11 @@
           <strong>{{ sh.label or "Untitled" }}</strong>
           <div class="meta">Date added: {{ sh.created_at | date_added }}</div>
           <div><a href="{{ sh.url }}" target="_blank" rel="noopener">{{ sh.url }}</a></div>
+          {% if is_active and player_enabled %}
+          <form method="post" action="{{ url_for('show_play', show_id=sh.id) }}" class="inline-form" style="margin-top: 0.4rem;">
+            <button type="submit" class="button">Play now</button>
+          </form>
+          {% endif %}
         </li>
         {% endfor %}
       </ol>
@@ -174,6 +174,11 @@
           <button type="submit" class="button secondary">Save</button>
         </form>
         <div class="row-actions">
+          {% if is_active and player_enabled and sh.enabled and sh.id in recent_ids %}
+          <form method="post" action="{{ url_for('show_play', show_id=sh.id) }}" class="inline-form">
+            <button type="submit" class="button">Play now</button>
+          </form>
+          {% endif %}
           <form method="post" action="{{ url_for('show_toggle', show_id=sh.id) }}" class="inline-form">
             <button type="submit" class="button secondary">{{ "Disable" if sh.enabled else "Enable" }}</button>
           </form>
@@ -187,5 +192,64 @@
       {% endfor %}
     </section>
   </main>
+  {% if is_active %}
+  <script>
+    (function () {
+      const slug = {{ station.slug | tojson }};
+      function metaLabel(ok) {
+        if (ok === null || ok === undefined) return "unknown";
+        return ok ? "ok" : "error";
+      }
+      async function refreshNowPlaying() {
+        try {
+          const res = await fetch("/api/status", { cache: "no-store" });
+          if (!res.ok) return;
+          const data = await res.json();
+          const station = (data.stations && data.stations[slug]) || data;
+          const show = station.current_show || data.current_show || {};
+          const status = station.status || data.status || "unknown";
+          const badge = document.getElementById("np-badge");
+          if (badge) {
+            badge.textContent = String(status).toUpperCase();
+            badge.className = "badge badge-" + status;
+          }
+          const artist = document.getElementById("np-artist");
+          if (artist) artist.textContent = show.artist || "";
+          const title = document.getElementById("np-title");
+          if (title) title.textContent = show.title || "";
+          const message = document.getElementById("np-message");
+          if (message) message.textContent = station.message || data.message || "";
+          const health = document.getElementById("np-health");
+          if (health) {
+            const ffmpeg = (data.ffmpeg_running ? "yes" : "no");
+            const ice = (data.icecast_connected ? "live" : "down");
+            const meta = metaLabel(
+              station.metadata_ok !== undefined ? station.metadata_ok : data.metadata_ok
+            );
+            health.textContent =
+              "FFmpeg: " + ffmpeg + " · Icecast: " + ice + " · Metadata: " + meta;
+          }
+          const detail = document.getElementById("np-metadata-detail");
+          if (detail) {
+            const text =
+              station.metadata_detail !== undefined
+                ? station.metadata_detail
+                : data.metadata_detail;
+            if (text) {
+              detail.textContent = text;
+              detail.hidden = false;
+            } else {
+              detail.textContent = "";
+              detail.hidden = true;
+            }
+          }
+        } catch (_) {
+          /* keep editing forms usable if status poll fails */
+        }
+      }
+      setInterval(refreshNowPlaying, 5000);
+    })();
+  </script>
+  {% endif %}
 </body>
 </html>

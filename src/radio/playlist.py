@@ -32,9 +32,16 @@ class Playlist:
         self.db = db
         self.station_slug = station_slug
         self._randomize_next = True
+        self._start_show_id: int | None = None
 
     def start_from_random(self) -> None:
+        self._start_show_id = None
         self._randomize_next = True
+
+    def start_from_show(self, show_id: int) -> None:
+        """Next cycle begins at show_id, then continues in order."""
+        self._randomize_next = False
+        self._start_show_id = show_id
 
     def load(self) -> PlaylistSnapshot:
         station = self.db.get_station_by_slug(self.station_slug)
@@ -54,7 +61,20 @@ class Playlist:
         snap = self.load()
         shows = snap.shows
         offset = 0
-        if self._randomize_next:
+        if self._start_show_id is not None:
+            target = self._start_show_id
+            self._start_show_id = None
+            for i, show in enumerate(shows):
+                if show.id == target:
+                    offset = i
+                    break
+            else:
+                raise RuntimeError(
+                    f"Show id={target} is not in the active playlist window "
+                    f"for station={snap.station.slug}"
+                )
+            shows = shows[offset:] + shows[:offset]
+        elif self._randomize_next:
             offset = random.randrange(len(shows))
             self._randomize_next = False
             shows = shows[offset:] + shows[:offset]

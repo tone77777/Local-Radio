@@ -116,6 +116,7 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
             station=station,
             shows=shows,
             recent=recent,
+            recent_ids={sh.id for sh in recent},
             station_state=station_state,
             is_active=is_active,
             active_station_slug=config.station_slug if player else None,
@@ -325,6 +326,31 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
         clear_logs(config)
         return jsonify({"ok": True, "message": "Log cleared"})
 
+    @app.post("/shows/<int:show_id>/play")
+    def show_play(show_id: int):
+        show = db.get_show(show_id)
+        if not show:
+            flash("Show not found.", "error")
+            return redirect(url_for("stations_index"))
+        redirect_target = url_for("station_detail", station_id=show.station_id)
+        if not player:
+            flash("Playback engine is not running.", "error")
+            return redirect(redirect_target)
+        station = db.get_station(show.station_id)
+        if not station or station.slug != config.station_slug:
+            flash(
+                f"Play now only works on the on-air station ({config.station_slug}).",
+                "error",
+            )
+            return redirect(redirect_target)
+        try:
+            player.play_show(show_id)
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(redirect_target)
+        flash("Jumping to that show.", "ok")
+        return redirect(redirect_target)
+
     @app.post("/actions/test-now-playing")
     def action_test_now_playing():
         _push_random_now_playing(metadata)
@@ -391,6 +417,16 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
             return jsonify({"ok": False, "detail": "playback engine not running"}), 400
         player.restart_stream()
         return jsonify({"ok": True, "detail": "stream restart requested"})
+
+    @app.post("/api/player/play/<int:show_id>")
+    def api_player_play(show_id: int):
+        if not player:
+            return jsonify({"ok": False, "detail": "playback engine not running"}), 400
+        try:
+            player.play_show(show_id)
+        except ValueError as exc:
+            return jsonify({"ok": False, "detail": str(exc)}), 400
+        return jsonify({"ok": True, "detail": "jump requested", "show_id": show_id})
 
     @app.post("/api/player/reload")
     def api_player_reload():

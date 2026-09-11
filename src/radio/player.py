@@ -71,6 +71,26 @@ class RadioPlayer:
         self._skip.set()
         self._kill_feeders(force=True)
 
+    def play_show(self, show_id: int) -> None:
+        """Cut the current feed and jump to a specific show in the on-air playlist."""
+        show = self.db.get_show(show_id)
+        if show is None:
+            raise ValueError("Show not found")
+        if not show.enabled:
+            raise ValueError("Show is disabled")
+        station = self.db.get_station(show.station_id)
+        if station is None or station.slug != self.config.station_slug:
+            raise ValueError("Show is not on the on-air station")
+        window_ids = {s.id for s in self.db.recent_shows(station.id)}
+        if show_id not in window_ids:
+            raise ValueError("Show is outside the active playlist window")
+        label = show.label or show.url
+        log.info("Play show requested id=%s label=%s", show_id, label)
+        self.playlist.start_from_show(show_id)
+        self._reload.set()
+        self._skip.set()
+        self._kill_feeders(force=True)
+
     def reload_playlist(self) -> None:
         self.restart_stream()
 
