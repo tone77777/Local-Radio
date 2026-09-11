@@ -17,10 +17,11 @@ class PlaylistSnapshot:
 
 
 class Playlist:
-    """Sequential rotation: oldest→newest within the active window, then repeat.
+    """Sequential rotation through the active window, then repeat.
 
-    The first cycle after start/restart begins at a random show, then continues
-    in order (wrapping). Later cycles start from the first show again.
+    Order matches the station Active window UI (newest → oldest). Skip advances
+    to the next show down that list. The first cycle after start/restart begins
+    at a random show; Play now starts at a chosen show.
     """
 
     def __init__(
@@ -52,10 +53,8 @@ class Playlist:
         shows = self.db.recent_shows(station.id)
         if not shows:
             raise RuntimeError(f"No enabled shows for station: {self.station_slug}")
-        # recent_shows is newest-first; play oldest→newest within the window,
-        # which matches “work through the current set” more naturally.
-        shows = list(reversed(shows))
-        return PlaylistSnapshot(station=station, shows=shows)
+        # recent_shows is newest-first — keep that so Skip matches the UI list.
+        return PlaylistSnapshot(station=station, shows=list(shows))
 
     def iter_cycle(self) -> Iterator[Show]:
         snap = self.load()
