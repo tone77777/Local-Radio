@@ -411,6 +411,22 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
         player.skip()
         return jsonify({"ok": True, "detail": "skip requested"})
 
+    @app.post("/api/player/delete-current")
+    def api_player_delete_current():
+        if not player:
+            return jsonify({"ok": False, "detail": "playback engine not running"}), 400
+        try:
+            deleted = player.delete_current()
+        except ValueError as exc:
+            return jsonify({"ok": False, "detail": str(exc)}), 400
+        return jsonify(
+            {
+                "ok": True,
+                "detail": "deleted current show and skipped",
+                "deleted": deleted,
+            }
+        )
+
     @app.post("/api/player/restart")
     def api_player_restart():
         if not player:

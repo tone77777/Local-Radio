@@ -35,9 +35,24 @@ def register_api(app: Flask, db: Database) -> None:
                             "enabled": True,
                         },
                     },
+                    {
+                        "method": "POST",
+                        "path": "/api/stations/<id_or_slug>/shows/bulk",
+                        "detail": "Bulk-add URLs (no yt-dlp). Accepts urls[] or shows[].",
+                        "body": {
+                            "urls": ["https://…", "https://…"],
+                            "shows": [{"url": "https://…", "label": "optional"}],
+                        },
+                    },
                     {"method": "GET", "path": "/api/stations"},
                     {"method": "GET", "path": "/api/stations/<id>/shows"},
                     {"method": "GET", "path": "/api/status"},
+                    {"method": "POST", "path": "/api/player/skip", "detail": "Skip to the next show"},
+                    {
+                        "method": "POST",
+                        "path": "/api/player/delete-current",
+                        "detail": "Delete the currently playing show and skip to the next",
+                    },
                 ],
             }
         )
@@ -107,6 +122,77 @@ def register_api(app: Flask, db: Database) -> None:
                 }
             ),
             201,
+        )
+
+    @app.post("/api/stations/<station_ident>/shows/bulk")
+    def api_bulk_add_shows(station_ident: str):
+        station = _lookup_station(db, station_ident)
+        if not station:
+            return jsonify({"ok": False, "detail": "station not found"}), 404
+
+        payload = request.get_json(silent=True) or {}
+        items: list[dict[str, Any]] = []
+
+        raw_shows = payload.get("shows")
+        if isinstance(raw_shows, list):
+            for entry in raw_shows:
+                if isinstance(entry, str):
+                    items.append({"url": entry})
+                elif isinstance(entry, dict):
+                    items.append(
+                        {
+                            "url": entry.get("url") or "",
+                            "label": entry.get("label") or "",
+                        }
+                    )
+                else:
+                    items.append({"url": ""})
+
+        raw_urls = payload.get("urls")
+        if isinstance(raw_urls, list):
+            for entry in raw_urls:
+                if isinstance(entry, str):
+                    items.append({"url": entry})
+                elif isinstance(entry, dict):
+                    items.append(
+                        {
+                            "url": entry.get("url") or "",
+                            "label": entry.get("label") or "",
+                        }
+                    )
+                else:
+                    items.append({"url": ""})
+
+        if not items:
+            return jsonify(
+                {
+                    "ok": False,
+                    "detail": "provide a non-empty urls[] and/or shows[] array",
+                }
+            ), 400
+
+        result = db.import_show_items(station.id, items)
+        log.info(
+            "API bulk add station=%s added=%s duplicates=%s invalid=%s",
+            station.slug,
+            result["added"],
+            result["duplicates"],
+            result["invalid"],
+        )
+        status = 201 if result["added"] else 200
+        return (
+            jsonify(
+                {
+                    "ok": True,
+                    "station": _station_payload(station),
+                    "added": result["added"],
+                    "duplicates": result["duplicates"],
+                    "invalid": result["invalid"],
+                    "shows": result["shows"],
+                    "errors": result["errors"],
+                }
+            ),
+            status,
         )
 
 

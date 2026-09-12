@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 
 
 SCHEMA = """
@@ -380,23 +380,58 @@ class Database:
         created_at: str | None = None,
     ) -> dict[str, int]:
         """Import one URL per line. Blank lines and # comments are ignored."""
-        stamp = created_at or _utcnow()
-        added = 0
-        duplicates = 0
-        invalid = 0
+        items: list[dict[str, str]] = []
         for raw in text.splitlines():
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
-            if not (line.startswith("http://") or line.startswith("https://")):
+            items.append({"url": line})
+        result = self.import_show_items(station_id, items, created_at=created_at)
+        return {
+            "added": result["added"],
+            "duplicates": result["duplicates"],
+            "invalid": result["invalid"],
+        }
+
+    def import_show_items(
+        self,
+        station_id: int,
+        items: list[dict[str, Any]],
+        *,
+        created_at: str | None = None,
+    ) -> dict[str, Any]:
+        """Bulk-add shows from [{url, label?}]. Skips duplicates; does not call yt-dlp."""
+        stamp = created_at or _utcnow()
+        added = 0
+        duplicates = 0
+        invalid = 0
+        added_shows: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for item in items:
+            url = str(item.get("url") or "").strip()
+            label = str(item.get("label") or "").strip()
+            if not url:
                 invalid += 1
+                errors.append({"url": url, "detail": "empty url"})
+                continue
+            if not (url.startswith("http://") or url.startswith("https://")):
+                invalid += 1
+                errors.append({"url": url, "detail": "url must start with http:// or https://"})
                 continue
             try:
-                self.add_show(station_id, line, created_at=stamp)
+                show_id = self.add_show(station_id, url, label=label, created_at=stamp)
                 added += 1
+                added_shows.append({"id": show_id, "url": url, "label": label or None})
             except sqlite3.IntegrityError:
                 duplicates += 1
-        return {"added": added, "duplicates": duplicates, "invalid": invalid}
+                errors.append({"url": url, "detail": "duplicate"})
+        return {
+            "added": added,
+            "duplicates": duplicates,
+            "invalid": invalid,
+            "shows": added_shows,
+            "errors": errors,
+        }
 
     def update_show(
         self,

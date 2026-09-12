@@ -39,6 +39,7 @@ class RadioPlayer:
         self._reload = threading.Event()
         self._feed_procs: list[subprocess.Popen] = []
         self._lock = threading.Lock()
+        self._current_show_id: Optional[int] = None
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -62,6 +63,26 @@ class RadioPlayer:
         log.info("Skip requested")
         self._skip.set()
         self._kill_feeders(force=True)
+
+    def delete_current(self) -> dict:
+        """Remove the currently playing show from the DB and skip to the next."""
+        with self._lock:
+            show_id = self._current_show_id
+        if show_id is None:
+            raise ValueError("Nothing is currently playing")
+        show = self.db.get_show(show_id)
+        if show is None:
+            with self._lock:
+                self._current_show_id = None
+            raise ValueError("Current show is no longer in the database")
+        label = show.label or show.url
+        log.info("Delete current show requested id=%s label=%s", show_id, label)
+        self.db.delete_show(show_id)
+        with self._lock:
+            if self._current_show_id == show_id:
+                self._current_show_id = None
+        self.skip()
+        return {"show_id": show_id, "label": label, "url": show.url}
 
     def restart_stream(self) -> None:
         """Cut the current feed now, keep Icecast up, reload playlist from a random show."""
@@ -199,6 +220,8 @@ class RadioPlayer:
 
     def _play_show(self, show: Show) -> None:
         self.encoder.ensure_running()
+        with self._lock:
+            self._current_show_id = show.id
         state.update(status="resolving", message=f"Resolving {show.url}")
         log.info("Starting show id=%s url=%s", show.id, show.url)
 
@@ -248,7 +271,12 @@ class RadioPlayer:
             state.update(message=f"Failed: {title}", last_error=f"Feed failed for {show.url}")
         else:
             log.info("Show finished: %s", title)
-        self.db.mark_played(show.id)
+        # Only mark played if the row still exists (delete-current may have removed it).
+        if self.db.get_show(show.id) is not None:
+            self.db.mark_played(show.id)
+        with self._lock:
+            if self._current_show_id == show.id:
+                self._current_show_id = None
 
     def _clip_seconds_for_show(self, show: Show) -> int | None:
         station = self.db.get_station(show.station_id)
