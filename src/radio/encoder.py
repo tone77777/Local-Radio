@@ -31,6 +31,8 @@ class PersistentEncoder:
         self._write_fd: Optional[int] = None
         self._log_thread: Optional[threading.Thread] = None
         self._stop_logs = threading.Event()
+        self._keepalive_thread: Optional[threading.Thread] = None
+        self._stop_keepalive = threading.Event()
 
     @property
     def running(self) -> bool:
@@ -85,6 +87,7 @@ class PersistentEncoder:
         log.info("Persistent encoder FIFO open at %s", self.fifo_path)
 
     def stop(self) -> None:
+        self.stop_keepalive()
         self._stop_logs.set()
         if self._write_fd is not None:
             try:
@@ -119,6 +122,62 @@ class PersistentEncoder:
             os.write(self._write_fd, chunk)
         except OSError as exc:
             log.warning("Failed writing silence pad: %s", exc)
+
+    def start_keepalive(self) -> None:
+        """Feed real-time silence until the next show's audio is ready."""
+        if self._keepalive_thread and self._keepalive_thread.is_alive():
+            return
+        if self._write_fd is None:
+            raise RuntimeError("Encoder write FD is not open")
+        self._stop_keepalive.clear()
+        self._keepalive_thread = threading.Thread(
+            target=self._feed_keepalive_silence,
+            name="encoder-keepalive",
+            daemon=True,
+        )
+        self._keepalive_thread.start()
+        log.debug("Encoder keep-alive silence started")
+
+    def stop_keepalive(self) -> None:
+        thread = self._keepalive_thread
+        if thread is None:
+            return
+        self._stop_keepalive.set()
+        thread.join(timeout=2)
+        if thread.is_alive():
+            log.warning("Encoder keep-alive thread did not stop promptly")
+        else:
+            self._keepalive_thread = None
+            log.debug("Encoder keep-alive silence stopped")
+
+    def _feed_keepalive_silence(self) -> None:
+        # Small, regularly paced writes keep Icecast below source-timeout
+        # without building a large silence buffer before real audio starts.
+        seconds_per_chunk = 0.05
+        frames = int(SAMPLE_RATE * seconds_per_chunk)
+        chunk = b"\x00" * (frames * CHANNELS * BYTES_PER_SAMPLE)
+        next_write = time.monotonic()
+
+        while not self._stop_keepalive.is_set():
+            write_fd = self._write_fd
+            if write_fd is None:
+                return
+            try:
+                view = memoryview(chunk)
+                while view:
+                    written = os.write(write_fd, view)
+                    view = view[written:]
+            except OSError as exc:
+                if not self._stop_keepalive.is_set():
+                    log.warning("Encoder keep-alive silence failed: %s", exc)
+                return
+
+            next_write += seconds_per_chunk
+            delay = next_write - time.monotonic()
+            if delay < -seconds_per_chunk:
+                next_write = time.monotonic()
+                delay = 0
+            self._stop_keepalive.wait(max(0, delay))
 
     def ensure_running(self) -> None:
         if not self.running:

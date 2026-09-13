@@ -224,6 +224,7 @@ class RadioPlayer:
         state.update(status="resolving", message=f"Resolving {show.url}")
         log.info("Starting show id=%s url=%s", show.id, show.url)
 
+        self.encoder.start_keepalive()
         try:
             resolved = resolve_source(show.url)
         except Exception as exc:
@@ -231,10 +232,16 @@ class RadioPlayer:
             state.update(last_error=str(exc), message=f"Skipped (resolve failed): {show.url}")
             time.sleep(1)
             return
+        finally:
+            self.encoder.stop_keepalive()
 
         if self._skip.is_set() or self._stop.is_set() or self._reload.is_set():
             log.info("Aborting show before feed: %s", show.url)
             return
+
+        # The encoder could have disconnected despite keep-alive; recover before
+        # handing its FIFO to the real audio feeder.
+        self.encoder.ensure_running()
 
         # Prefer DB label when present for title hint, but trust yt-dlp for artist/title.
         artist = resolved.artist
