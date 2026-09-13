@@ -27,6 +27,7 @@ class Config:
     icecast_admin_user: str
     icecast_admin_password: str
     icecast_public_url: str
+    icecast_public_port: int
     audio_bitrate: str
     enable_test_stream: bool
     playback_enabled: bool
@@ -59,6 +60,16 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         public = _env("ICECAST_PUBLIC_URL", "http://127.0.0.1:18080")
+        public_port = _env_int("ICECAST_HOST_PORT", 0)
+        if public_port <= 0:
+            # Fall back to port embedded in ICECAST_PUBLIC_URL, else 18080.
+            try:
+                from urllib.parse import urlparse
+
+                parsed = urlparse(public)
+                public_port = parsed.port or (443 if parsed.scheme == "https" else 18080)
+            except Exception:
+                public_port = 18080
         duration_raw = _env("PLAY_DURATION_SECONDS", "90")
         if duration_raw in {"", "0", "full", "none"}:
             play_duration: int | None = None
@@ -75,6 +86,7 @@ class Config:
             icecast_admin_user=_env("ICECAST_ADMIN_USER", "admin"),
             icecast_admin_password=_env("ICECAST_ADMIN_PASSWORD", "hackme"),
             icecast_public_url=public,
+            icecast_public_port=public_port,
             audio_bitrate=_env("AUDIO_BITRATE", "192k"),
             enable_test_stream=_env("ENABLE_TEST_STREAM", "0") not in {"0", "false", "False"},
             playback_enabled=_env("PLAYBACK_ENABLED", "1") not in {"0", "false", "False"},

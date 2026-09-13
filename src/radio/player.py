@@ -65,7 +65,7 @@ class RadioPlayer:
         self._kill_feeders(force=True)
 
     def delete_current(self) -> dict:
-        """Remove the currently playing show from the DB and skip to the next."""
+        """Remove the currently playing show from the DB; leave playback alone."""
         with self._lock:
             show_id = self._current_show_id
         if show_id is None:
@@ -81,7 +81,6 @@ class RadioPlayer:
         with self._lock:
             if self._current_show_id == show_id:
                 self._current_show_id = None
-        self.skip()
         return {"show_id": show_id, "label": label, "url": show.url}
 
     def restart_stream(self) -> None:

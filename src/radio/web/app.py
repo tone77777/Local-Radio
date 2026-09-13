@@ -32,6 +32,27 @@ def _format_added(value: str | None) -> str:
         return value
 
 
+def _request_icecast_base(config: Config) -> str:
+    """Build Icecast base URL from the browser's host + published Icecast port."""
+    host = (request.host or "127.0.0.1").split(":")[0] or "127.0.0.1"
+    scheme = request.scheme or "http"
+    port = config.icecast_public_port
+    if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
+        return f"{scheme}://{host}"
+    return f"{scheme}://{host}:{port}"
+
+
+def _request_stream_url(config: Config, mount: str | None = None) -> str:
+    mount = mount or config.icecast_mount
+    if not mount.startswith("/"):
+        mount = "/" + mount
+    return f"{_request_icecast_base(config)}{mount}"
+
+
+def _request_icecast_status_url(config: Config) -> str:
+    return f"{_request_icecast_base(config)}/status.xsl"
+
+
 def create_app(config: Config, db: Database, player: RadioPlayer | None = None) -> Flask:
     template_dir = Path(__file__).parent / "templates"
     static_dir = Path(__file__).parent / "static"
@@ -53,8 +74,8 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
             "index.html",
             state=snap,
             config=config,
-            stream_url=config.stream_url,
-            icecast_status_url=config.icecast_status_url,
+            stream_url=_request_stream_url(config),
+            icecast_status_url=_request_icecast_status_url(config),
             log_level=config.log_level,
             stations=stations,
             player_enabled=player is not None,
@@ -110,7 +131,6 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
         recent = db.recent_shows(station_id)
         station_state = state.station_snapshot(station.slug)
         is_active = bool(player) and station.slug == config.station_slug
-        public = config.icecast_public_url.rstrip("/")
         return render_template(
             "station_detail.html",
             station=station,
@@ -121,8 +141,8 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
             is_active=is_active,
             active_station_slug=config.station_slug if player else None,
             player_enabled=player is not None,
-            stream_url=f"{public}{station.mount}",
-            icecast_status_url=config.icecast_status_url,
+            stream_url=_request_stream_url(config, station.mount),
+            icecast_status_url=_request_icecast_status_url(config),
         )
 
     @app.post("/stations/<int:station_id>")
@@ -422,7 +442,7 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
         return jsonify(
             {
                 "ok": True,
-                "detail": "deleted current show and skipped",
+                "detail": "deleted current show from playlist",
                 "deleted": deleted,
             }
         )
@@ -492,8 +512,8 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
         snap["log_level"] = config.log_level
         snap["station_count"] = len(db.list_stations())
         snap["links"] = {
-            "stream": config.stream_url,
-            "icecast_status": config.icecast_status_url,
+            "stream": _request_stream_url(config),
+            "icecast_status": _request_icecast_status_url(config),
             "logs": "/logs",
             "stations": "/stations",
             "api_log": "/api/log",

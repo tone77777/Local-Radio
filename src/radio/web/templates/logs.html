@@ -38,6 +38,7 @@
         {% else %}
         <a href="/logs?level={{ selected_level }}&refresh=1">Auto-refresh</a>
         {% endif %}
+        <button type="button" id="copy-logs" class="linkish">Copy logs</button>
         <a href="/api/log?level={{ selected_level }}" target="_blank" rel="noopener">JSON</a>
         <form method="post" action="/logs/clear" class="inline-form">
           <input type="hidden" name="level" value="{{ selected_level }}" />
@@ -54,6 +55,34 @@
   <script>
     const el = document.getElementById("log");
     if (el) el.scrollTop = el.scrollHeight;
+
+    const copyBtn = document.getElementById("copy-logs");
+    if (copyBtn && el) {
+      copyBtn.addEventListener("click", async () => {
+        const text = el.innerText || el.textContent || "";
+        const label = copyBtn.textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+          copyBtn.textContent = "Copied";
+        } catch (_) {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          try {
+            document.execCommand("copy");
+            copyBtn.textContent = "Copied";
+          } catch (err) {
+            copyBtn.textContent = "Copy failed";
+          }
+          sel.removeAllRanges();
+        }
+        setTimeout(() => {
+          copyBtn.textContent = label;
+        }, 1500);
+      });
+    }
   </script>
 </body>
 </html>

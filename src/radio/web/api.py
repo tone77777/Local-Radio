@@ -51,7 +51,7 @@ def register_api(app: Flask, db: Database) -> None:
                     {
                         "method": "POST",
                         "path": "/api/player/delete-current",
-                        "detail": "Delete the currently playing show and skip to the next",
+                        "detail": "Delete the currently playing show from the playlist (does not skip)",
                     },
                 ],
             }
