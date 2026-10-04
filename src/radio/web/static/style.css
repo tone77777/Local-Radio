@@ -263,6 +263,23 @@ table a {
   margin-top: 0.6rem;
 }
 
+.cache-status {
+  overflow-wrap: anywhere;
+}
+
+.cache-ready {
+  color: var(--ok);
+}
+
+.cache-failed {
+  color: var(--bad);
+}
+
+.cache-queued,
+.cache-downloading {
+  color: var(--warn);
+}
+
 .header-actions {
   display: flex;
   gap: 0.5rem;

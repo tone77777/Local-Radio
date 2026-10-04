@@ -37,6 +37,10 @@ class Config:
     log_level: str
     log_max_bytes: int
     database_path: str
+    cache_enabled: bool
+    cache_dir: str
+    cache_max_bytes: int
+    cache_prefetch_count: int
 
     @property
     def stream_url(self) -> str:
@@ -96,4 +100,8 @@ class Config:
             log_level=_env("LOG_LEVEL", "INFO").upper() or "INFO",
             log_max_bytes=_env_int("LOG_MAX_BYTES", 2_000_000),
             database_path=_env("DATABASE_PATH", "/data/radio.db"),
+            cache_enabled=_env("CACHE_ENABLED", "1") not in {"0", "false", "False"},
+            cache_dir=_env("CACHE_DIR", "/data/cache"),
+            cache_max_bytes=_env_int("CACHE_MAX_BYTES", 50_000_000_000),
+            cache_prefetch_count=_env_int("CACHE_PREFETCH_COUNT", 5),
         )

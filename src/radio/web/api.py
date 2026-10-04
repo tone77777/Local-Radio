@@ -53,6 +53,16 @@ def register_api(app: Flask, db: Database) -> None:
                         "path": "/api/player/delete-current",
                         "detail": "Delete the currently playing show from the playlist (does not skip)",
                     },
+                    {
+                        "method": "POST",
+                        "path": "/api/shows/<id>/cache",
+                        "detail": "Queue a show for background caching",
+                    },
+                    {
+                        "method": "DELETE",
+                        "path": "/api/shows/<id>/cache",
+                        "detail": "Remove a cached show",
+                    },
                 ],
             }
         )
@@ -223,6 +233,10 @@ def _show_payload(show: Show) -> dict[str, Any]:
         "enabled": show.enabled,
         "created_at": show.created_at,
         "play_count": show.play_count,
+        "cache_status": show.cache_status,
+        "cache_size_bytes": show.cache_size_bytes,
+        "cached_at": show.cached_at,
+        "cache_error": show.cache_error,
     }
 
 

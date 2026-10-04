@@ -30,6 +30,14 @@ CREATE TABLE IF NOT EXISTS shows (
     created_at TEXT NOT NULL,
     last_played_at TEXT,
     play_count INTEGER NOT NULL DEFAULT 0,
+    cache_status TEXT NOT NULL DEFAULT 'uncached',
+    cache_path TEXT,
+    cache_size_bytes INTEGER,
+    cached_at TEXT,
+    cache_last_accessed_at TEXT,
+    cache_error TEXT,
+    cache_artist TEXT,
+    cache_title TEXT,
     UNIQUE(station_id, url)
 );
 
@@ -111,6 +119,14 @@ class Show:
     created_at: str
     last_played_at: Optional[str]
     play_count: int
+    cache_status: str
+    cache_path: Optional[str]
+    cache_size_bytes: Optional[int]
+    cached_at: Optional[str]
+    cache_last_accessed_at: Optional[str]
+    cache_error: Optional[str]
+    cache_artist: Optional[str]
+    cache_title: Optional[str]
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Show":
@@ -123,6 +139,16 @@ class Show:
             created_at=row["created_at"],
             last_played_at=row["last_played_at"],
             play_count=int(row["play_count"] or 0),
+            cache_status=str(row["cache_status"] or "uncached"),
+            cache_path=row["cache_path"],
+            cache_size_bytes=(
+                int(row["cache_size_bytes"]) if row["cache_size_bytes"] is not None else None
+            ),
+            cached_at=row["cached_at"],
+            cache_last_accessed_at=row["cache_last_accessed_at"],
+            cache_error=row["cache_error"],
+            cache_artist=row["cache_artist"],
+            cache_title=row["cache_title"],
         )
 
 
@@ -152,9 +178,30 @@ class Database:
         self.seed_if_empty()
 
     def _migrate(self, conn: sqlite3.Connection) -> None:
-        cols = {row[1] for row in conn.execute("PRAGMA table_info(stations)")}
-        if "play_duration_seconds" not in cols:
+        station_cols = {row[1] for row in conn.execute("PRAGMA table_info(stations)")}
+        if "play_duration_seconds" not in station_cols:
             conn.execute("ALTER TABLE stations ADD COLUMN play_duration_seconds INTEGER")
+        show_cols = {row[1] for row in conn.execute("PRAGMA table_info(shows)")}
+        cache_columns = {
+            "cache_status": "TEXT NOT NULL DEFAULT 'uncached'",
+            "cache_path": "TEXT",
+            "cache_size_bytes": "INTEGER",
+            "cached_at": "TEXT",
+            "cache_last_accessed_at": "TEXT",
+            "cache_error": "TEXT",
+            "cache_artist": "TEXT",
+            "cache_title": "TEXT",
+        }
+        for name, definition in cache_columns.items():
+            if name not in show_cols:
+                conn.execute(f"ALTER TABLE shows ADD COLUMN {name} {definition}")
+        conn.execute(
+            """
+            UPDATE shows
+            SET cache_status = 'uncached'
+            WHERE cache_status IN ('queued', 'downloading')
+            """
+        )
 
     def seed_if_empty(self) -> None:
         with self.connect() as conn:
@@ -473,3 +520,64 @@ class Database:
                 """,
                 (_utcnow(), show_id),
             )
+
+    def update_show_cache(
+        self,
+        show_id: int,
+        *,
+        status: str,
+        path: str | None = None,
+        size_bytes: int | None = None,
+        error: str | None = None,
+        artist: str | None = None,
+        title: str | None = None,
+    ) -> None:
+        now = _utcnow()
+        cached_at = now if status == "ready" else None
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE shows
+                SET cache_status = ?,
+                    cache_path = ?,
+                    cache_size_bytes = ?,
+                    cached_at = ?,
+                    cache_error = ?,
+                    cache_artist = COALESCE(?, cache_artist),
+                    cache_title = COALESCE(?, cache_title)
+                WHERE id = ?
+                """,
+                (
+                    status,
+                    path,
+                    size_bytes,
+                    cached_at,
+                    error,
+                    artist,
+                    title,
+                    show_id,
+                ),
+            )
+
+    def touch_show_cache(self, show_id: int) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE shows SET cache_last_accessed_at = ? WHERE id = ?",
+                (_utcnow(), show_id),
+            )
+
+    def cached_shows_oldest_first(self) -> list[Show]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM shows
+                WHERE cache_status = 'ready' AND cache_path IS NOT NULL
+                ORDER BY COALESCE(cache_last_accessed_at, cached_at, created_at) ASC, id ASC
+                """
+            ).fetchall()
+        return [Show.from_row(row) for row in rows]
+
+    def all_show_ids(self) -> set[int]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT id FROM shows").fetchall()
+        return {int(row["id"]) for row in rows}

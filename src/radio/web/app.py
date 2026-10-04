@@ -32,6 +32,17 @@ def _format_added(value: str | None) -> str:
         return value
 
 
+def _format_bytes(value: int | None) -> str:
+    if not value:
+        return "0 B"
+    size = float(value)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1000 or unit == "TB":
+            return f"{size:.1f} {unit}"
+        size /= 1000
+    return f"{size:.1f} TB"
+
+
 def _request_icecast_base(config: Config) -> str:
     """Build Icecast base URL from the browser's host + published Icecast port."""
     host = (request.host or "127.0.0.1").split(":")[0] or "127.0.0.1"
@@ -60,6 +71,7 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
     app.config["RADIO_CONFIG"] = config
     app.secret_key = config.icecast_admin_password or "local-radio-dev"
     app.jinja_env.filters["date_added"] = _format_added
+    app.jinja_env.filters["file_size"] = _format_bytes
     metadata = IcecastMetadata(config)
     register_api(app, db)
 
@@ -141,6 +153,7 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
             is_active=is_active,
             active_station_slug=config.station_slug if player else None,
             player_enabled=player is not None,
+            cache_stats=player.cache.stats() if player else None,
             stream_url=_request_stream_url(config, station.mount),
             icecast_status_url=_request_icecast_status_url(config),
         )
@@ -195,6 +208,9 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
         if station.slug == "test":
             flash("The test station is protected and cannot be deleted.", "error")
             return redirect(url_for("station_detail", station_id=station_id))
+        if player:
+            for show in db.list_shows(station_id):
+                player.cache.remove(show.id)
         db.delete_station(station_id)
         flash("Station deleted.", "ok")
         return redirect(url_for("stations_index"))
@@ -249,6 +265,8 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
         except sqlite3.IntegrityError:
             flash("That URL is already on this station.", "error")
             return redirect(url_for("station_detail", station_id=show.station_id))
+        if player and url != show.url:
+            player.cache.remove(show.id)
         flash("Show saved.", "ok")
         return redirect(url_for("station_detail", station_id=show.station_id))
 
@@ -268,9 +286,37 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
             flash("Show not found.", "error")
             return redirect(url_for("stations_index"))
         station_id = show.station_id
+        if player:
+            player.cache.remove(show_id)
         db.delete_show(show_id)
         flash("Show deleted.", "ok")
         return redirect(url_for("station_detail", station_id=station_id))
+
+    @app.post("/shows/<int:show_id>/cache")
+    def show_cache(show_id: int):
+        show = db.get_show(show_id)
+        if not show:
+            flash("Show not found.", "error")
+            return redirect(url_for("stations_index"))
+        if not player or not config.cache_enabled:
+            flash("Show cache is not enabled.", "error")
+            return redirect(url_for("station_detail", station_id=show.station_id))
+        queued = player.cache.enqueue(show_id, force=show.cache_status == "failed")
+        flash("Show queued for caching." if queued else "Show is already cached or queued.", "ok")
+        return redirect(url_for("station_detail", station_id=show.station_id))
+
+    @app.post("/shows/<int:show_id>/cache/remove")
+    def show_cache_remove(show_id: int):
+        show = db.get_show(show_id)
+        if not show:
+            flash("Show not found.", "error")
+            return redirect(url_for("stations_index"))
+        if not player:
+            flash("Show cache is not running.", "error")
+            return redirect(url_for("station_detail", station_id=show.station_id))
+        player.cache.remove(show_id)
+        flash("Cached copy removed.", "ok")
+        return redirect(url_for("station_detail", station_id=show.station_id))
 
     @app.get("/api/stations")
     def api_stations():
@@ -314,6 +360,10 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
                         "created_at": sh.created_at,
                         "last_played_at": sh.last_played_at,
                         "play_count": sh.play_count,
+                        "cache_status": sh.cache_status,
+                        "cache_size_bytes": sh.cache_size_bytes,
+                        "cached_at": sh.cached_at,
+                        "cache_error": sh.cache_error,
                     }
                     for sh in shows
                 ],
@@ -471,6 +521,31 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
         player.restart_stream()
         return jsonify({"ok": True, "detail": "stream restart requested"})
 
+    @app.post("/api/shows/<int:show_id>/cache")
+    def api_show_cache(show_id: int):
+        if not player or not config.cache_enabled:
+            return jsonify({"ok": False, "detail": "show cache is not enabled"}), 400
+        show = db.get_show(show_id)
+        if not show:
+            return jsonify({"ok": False, "detail": "show not found"}), 404
+        queued = player.cache.enqueue(show_id, force=show.cache_status == "failed")
+        return jsonify(
+            {
+                "ok": True,
+                "queued": queued,
+                "detail": "cache queued" if queued else "already cached or queued",
+            }
+        )
+
+    @app.delete("/api/shows/<int:show_id>/cache")
+    def api_show_cache_remove(show_id: int):
+        if not player:
+            return jsonify({"ok": False, "detail": "show cache is not running"}), 400
+        if not db.get_show(show_id):
+            return jsonify({"ok": False, "detail": "show not found"}), 404
+        removed = player.cache.remove(show_id)
+        return jsonify({"ok": True, "removed": removed})
+
     @app.post("/api/metadata/test")
     def api_metadata_test():
         result = _push_random_now_playing(metadata)
@@ -511,6 +586,7 @@ def create_app(config: Config, db: Database, player: RadioPlayer | None = None) 
         snap["icecast_connected"] = mount_live
         snap["log_level"] = config.log_level
         snap["station_count"] = len(db.list_stations())
+        snap["cache"] = player.cache.stats() if player else None
         snap["links"] = {
             "stream": _request_stream_url(config),
             "icecast_status": _request_icecast_status_url(config),

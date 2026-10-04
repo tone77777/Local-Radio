@@ -24,6 +24,18 @@ Logging uses `LOG_LEVEL` (`DEBUG` / `INFO` / `WARNING` / `ERROR`) and rotates so
 
 Playlists live in SQLite (`DATABASE_PATH`, default `/data/radio.db`) with multiple stations. Each station can set its own clip length (blank = full show) and limit playback to the newest N shows.
 
+## Show cache
+
+Local Radio downloads upcoming shows in the background and prefers the local
+copy on later plays. If a show is not cached, playback falls back to its remote
+URL and queues it for caching afterwards.
+
+- Cached audio lives in `CACHE_DIR` (default `/data/cache`, persisted in `./data/cache`).
+- `CACHE_PREFETCH_COUNT` controls how many shows from the active window are queued at startup.
+- `CACHE_MAX_BYTES` sets the storage quota (default 50 GB); least-recently-used files are removed first.
+- Set `CACHE_ENABLED=0` to retain streaming-only behaviour.
+- The station page shows cache state and provides **Cache now** / **Remove cache** controls.
+
 ## Milestone 0 (current)
 
 - Icecast on host port **18080**
@@ -31,6 +43,7 @@ Playlists live in SQLite (`DATABASE_PATH`, default `/data/radio.db`) with multip
 - Persistent FFmpeg encoder into Icecast (avoids dropping listeners between shows)
 - yt-dlp → decode → encoder FIFO → Icecast
 - Metadata updates on each show change
+- Background local audio cache with remote fallback
 - Per-station clip length and skip/reload on the station page
 - Flask status / stations / logs UI
 

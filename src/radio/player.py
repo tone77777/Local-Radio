@@ -10,6 +10,7 @@ from typing import Optional
 
 import requests
 
+from radio.cache import ShowCache
 from radio.config import Config
 from radio.db import Database, Show
 from radio.encoder import PersistentEncoder
@@ -29,6 +30,7 @@ class RadioPlayer:
         self.db = db
         self.encoder = PersistentEncoder(config)
         self.metadata = IcecastMetadata(config)
+        self.cache = ShowCache(config, db)
         self.playlist = Playlist(
             db,
             station_slug=config.station_slug,
@@ -47,6 +49,10 @@ class RadioPlayer:
         self._stop.clear()
         self._skip.clear()
         self._reload.clear()
+        self.cache.start()
+        station = self.db.get_station_by_slug(self.config.station_slug)
+        if station:
+            self.cache.prefetch(self.db.recent_shows(station.id))
         self._thread = threading.Thread(target=self._run, name="radio-player", daemon=True)
         self._thread.start()
 
@@ -55,6 +61,7 @@ class RadioPlayer:
         self._skip.set()
         self._reload.set()
         self._kill_feeders(force=True)
+        self.cache.stop()
         self.encoder.stop()
         if self._thread:
             self._thread.join(timeout=10)
@@ -77,6 +84,7 @@ class RadioPlayer:
             raise ValueError("Current show is no longer in the database")
         label = show.label or show.url
         log.info("Delete current show requested id=%s label=%s", show_id, label)
+        self.cache.remove(show_id)
         self.db.delete_show(show_id)
         with self._lock:
             if self._current_show_id == show_id:
@@ -224,16 +232,25 @@ class RadioPlayer:
         state.update(status="resolving", message=f"Resolving {show.url}")
         log.info("Starting show id=%s url=%s", show.id, show.url)
 
-        self.encoder.start_keepalive()
-        try:
-            resolved = resolve_source(show.url)
-        except Exception as exc:
-            log.error("Skipping show; metadata/resolve failed: %s", exc)
-            state.update(last_error=str(exc), message=f"Skipped (resolve failed): {show.url}")
-            time.sleep(1)
-            return
-        finally:
-            self.encoder.stop_keepalive()
+        cached_path = self.cache.path_for(show)
+        if cached_path is not None:
+            artist = show.cache_artist or "Local Radio"
+            title = show.cache_title or show.label or "Cached show"
+            self.cache.mark_used(show.id)
+            log.info("Using cached show id=%s path=%s", show.id, cached_path)
+        else:
+            self.encoder.start_keepalive()
+            try:
+                resolved = resolve_source(show.url)
+            except Exception as exc:
+                log.error("Skipping show; metadata/resolve failed: %s", exc)
+                state.update(last_error=str(exc), message=f"Skipped (resolve failed): {show.url}")
+                time.sleep(1)
+                return
+            finally:
+                self.encoder.stop_keepalive()
+            artist = resolved.artist
+            title = resolved.title
 
         if self._skip.is_set() or self._stop.is_set() or self._reload.is_set():
             log.info("Aborting show before feed: %s", show.url)
@@ -243,9 +260,7 @@ class RadioPlayer:
         # handing its FIFO to the real audio feeder.
         self.encoder.ensure_running()
 
-        # Prefer DB label when present for title hint, but trust yt-dlp for artist/title.
-        artist = resolved.artist
-        title = resolved.title
+        # Prefer DB label when present for title hint, but trust source metadata.
         if show.label and title == "Unknown":
             title = show.label
 
@@ -256,7 +271,11 @@ class RadioPlayer:
             last_error=None,
         )
 
-        started = self._feed_show(show.url, self._clip_seconds_for_show(show))
+        started = self._feed_show(
+            show.url,
+            self._clip_seconds_for_show(show),
+            local_path=str(cached_path) if cached_path else None,
+        )
         if not started:
             return
 
@@ -275,11 +294,17 @@ class RadioPlayer:
         elif failed:
             log.warning("Show failed: %s", title)
             state.update(message=f"Failed: {title}", last_error=f"Feed failed for {show.url}")
+            if cached_path is not None:
+                log.warning("Discarding failed cached copy for show id=%s", show.id)
+                self.cache.remove(show.id)
+                self.cache.enqueue(show.id)
         else:
             log.info("Show finished: %s", title)
         # Only mark played if the row still exists (delete-current may have removed it).
         if self.db.get_show(show.id) is not None:
             self.db.mark_played(show.id)
+            if cached_path is None:
+                self.cache.enqueue(show.id)
         with self._lock:
             if self._current_show_id == show.id:
                 self._current_show_id = None
@@ -333,10 +358,21 @@ class RadioPlayer:
                 metadata_detail="Mount/feed not ready",
             )
 
-    def _feed_show(self, url: str, duration_seconds: int | None = None) -> bool:
-        ytdlp_cmd, ffmpeg_cmd = build_feed_command(url, duration_seconds)
+    def _feed_show(
+        self,
+        url: str,
+        duration_seconds: int | None = None,
+        *,
+        local_path: str | None = None,
+    ) -> bool:
+        ytdlp_cmd, ffmpeg_cmd = build_feed_command(
+            url,
+            duration_seconds,
+            local_path=local_path,
+        )
         log.info(
-            "Feeding show into persistent encoder (duration=%s)",
+            "Feeding %s show into persistent encoder (duration=%s)",
+            "cached" if local_path else "remote",
             duration_seconds or "full",
         )
         try:

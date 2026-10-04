@@ -62,18 +62,22 @@ def resolve_source(url: str, timeout: float = 60.0) -> ResolvedSource:
 def build_feed_command(
     url: str,
     duration_seconds: Optional[int] = None,
+    local_path: str | None = None,
 ) -> list[list[str]]:
     """Return [yt-dlp_cmd, ffmpeg_decode_cmd] writing PCM to stdout (pipe:1)."""
-    ytdlp = [
-        "yt-dlp",
-        "-f",
-        "bestaudio/best",
-        "-o",
-        "-",
-        "--no-playlist",
-        "--no-warnings",
-        url,
-    ]
+    if local_path:
+        source = ["cat", local_path]
+    else:
+        source = [
+            "yt-dlp",
+            "-f",
+            "bestaudio/best",
+            "-o",
+            "-",
+            "--no-playlist",
+            "--no-warnings",
+            url,
+        ]
     ffmpeg = [
         "ffmpeg",
         "-hide_banner",
@@ -99,4 +103,4 @@ def build_feed_command(
             "pipe:1",
         ]
     )
-    return [ytdlp, ffmpeg]
+    return [source, ffmpeg]

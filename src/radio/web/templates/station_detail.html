@@ -118,17 +118,44 @@
 
     <section>
       <h2>Active window (last N · newest first)</h2>
+      {% if cache_stats and cache_stats.enabled %}
+      <p class="meta">
+        Cache: {{ cache_stats.ready }} ready · {{ cache_stats.size_bytes | file_size }}
+        of {{ cache_stats.max_bytes | file_size }}
+      </p>
+      {% endif %}
       {% if recent %}
       <ol class="url-list">
         {% for sh in recent %}
         <li>
           <strong>{{ sh.label or "Untitled" }}</strong>
           <div class="meta">Date added: {{ sh.created_at | date_added }}</div>
+          <div class="meta cache-status cache-{{ sh.cache_status }}">
+            Cache:
+            {% if sh.cache_status == "ready" %}
+              ready · {{ sh.cache_size_bytes | file_size }}
+            {% elif sh.cache_status == "failed" %}
+              failed{% if sh.cache_error %} · {{ sh.cache_error }}{% endif %}
+            {% else %}
+              {{ sh.cache_status }}
+            {% endif %}
+          </div>
           <div><a href="{{ sh.url }}" target="_blank" rel="noopener">{{ sh.url }}</a></div>
           {% if is_active and player_enabled %}
           <form method="post" action="{{ url_for('show_play', show_id=sh.id) }}" class="inline-form" style="margin-top: 0.4rem;">
             <button type="submit" class="button">Play now</button>
           </form>
+          {% endif %}
+          {% if player_enabled and cache_stats and cache_stats.enabled %}
+            {% if sh.cache_status in ["ready", "queued", "downloading"] %}
+            <form method="post" action="{{ url_for('show_cache_remove', show_id=sh.id) }}" class="inline-form">
+              <button type="submit" class="button secondary">Remove cache</button>
+            </form>
+            {% else %}
+            <form method="post" action="{{ url_for('show_cache', show_id=sh.id) }}" class="inline-form">
+              <button type="submit" class="button secondary">Cache now</button>
+            </form>
+            {% endif %}
           {% endif %}
         </li>
         {% endfor %}
@@ -173,6 +200,16 @@
             Enabled
           </label>
           <p class="meta">Played {{ sh.play_count }}×{% if sh.last_played_at %} · last {{ sh.last_played_at | date_added }}{% endif %}</p>
+          <p class="meta cache-status cache-{{ sh.cache_status }}">
+            Cache:
+            {% if sh.cache_status == "ready" %}
+              ready · {{ sh.cache_size_bytes | file_size }}{% if sh.cached_at %} · {{ sh.cached_at | date_added }}{% endif %}
+            {% elif sh.cache_status == "failed" %}
+              failed{% if sh.cache_error %} · {{ sh.cache_error }}{% endif %}
+            {% else %}
+              {{ sh.cache_status }}
+            {% endif %}
+          </p>
           <button type="submit" class="button secondary">Save</button>
         </form>
         <div class="row-actions">
@@ -184,6 +221,17 @@
           <form method="post" action="{{ url_for('show_toggle', show_id=sh.id) }}" class="inline-form">
             <button type="submit" class="button secondary">{{ "Disable" if sh.enabled else "Enable" }}</button>
           </form>
+          {% if player_enabled and cache_stats and cache_stats.enabled %}
+            {% if sh.cache_status in ["ready", "queued", "downloading"] %}
+            <form method="post" action="{{ url_for('show_cache_remove', show_id=sh.id) }}" class="inline-form">
+              <button type="submit" class="button secondary">Remove cache</button>
+            </form>
+            {% else %}
+            <form method="post" action="{{ url_for('show_cache', show_id=sh.id) }}" class="inline-form">
+              <button type="submit" class="button secondary">Cache now</button>
+            </form>
+            {% endif %}
+          {% endif %}
           <form method="post" action="{{ url_for('show_delete', show_id=sh.id) }}" class="inline-form" onsubmit="return confirm('Delete this show?');">
             <button type="submit" class="button danger">Delete</button>
           </form>
